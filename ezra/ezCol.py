@@ -1493,7 +1493,7 @@ def main():
                         # write file header
                         fileWrite.write(metadata)
                     else:
-                        print(metadata, end='')
+                        print(metadata)
 
                     coordMayBeNew = 0
 
@@ -1506,7 +1506,7 @@ def main():
                     if not ezColStdout:
                         fileWrite.write(coord)
                     else:
-                        print(coord, end='')
+                        print(coord)
                     coordMayBeNew = 0
 
                 # now feedRef, timeStampUtcS, fileNameS, and fileSample are updated
@@ -1521,7 +1521,7 @@ def main():
                 if not ezColStdout:
                     fileWrite.write(dataSample)
                 else:
-                    print(dataSample, end='')
+                    print(dataSample)
 
                 if ezColVerbose:
                     print(ezRAObsName)
