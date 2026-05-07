@@ -273,7 +273,9 @@ def printUsage():
     print('              -ezColYLimL      0.1  0.4     (Fraction of Y Auto Scale, Min and Max)')
     print()
     print(r'              -ezDefaultsFile ..\bigDish8.txt   (Additional file of default arguments)')
-    print('              -ezColStdout         1        (if 1, prints data to stdout)')
+    print('              -ezColStdout         0        (if 1, prints data to stdout)')
+    print('              -ezColSocket         0        (if 1, prints data to socket connection)')
+    print('              -ezColWrite          1        (if 1, prints data to file)')
     print()
     print('              -eXXXXXXXXXXXXXXzIgonoreThisWholeOneWord')
     print('         (any one word starting with -eX is ignored, handy for long command line editing)')
@@ -296,7 +298,35 @@ def printUsage():
     print()
     exit()
 
+def connectSocket(port=5453):
+    import socket
 
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(('', port))
+
+    print(f'Listening for socket connection on port {port}')
+    sock.listen(1)
+    socketConn, addr = sock.accept()
+
+    print(f'Connected to {addr}')
+    return socketConn
+
+def exportData(data, stdout=False, socketConn=None, fileHandle=None):
+    if stdout:
+        print(data)
+
+    if socketConn != None:
+        while True:
+            try:
+                socketConn.send(data.encode())
+                break
+            except:
+                print('Failed to send socket data, may have lost connection.')
+                os._exit(1)
+
+    if fileHandle != None:
+        fileHandle.write(data)
 
 def ezColArgumentsFile(ezDefaultsFileNameInput):
     # process arguments from file
@@ -339,6 +369,8 @@ def ezColArgumentsFile(ezDefaultsFileNameInput):
     global ezColYLim1                       # float
 
     global ezColStdout                      # integer
+    global ezColSocket                      # integer
+    global ezColWrite                       # integer
 
 
     print()
@@ -464,6 +496,12 @@ def ezColArgumentsFile(ezDefaultsFileNameInput):
             elif thisLine0Lower == '-ezColStdout'.lower():
                 ezColStdout = float(thisLineSplit[1])
 
+            elif thisLine0Lower == '-ezColSocket'.lower():
+                ezColSocket = float(thisLineSplit[1])
+
+            elif thisLine0Lower == '-ezColWrite'.lower():
+                ezColWrite = float(thisLineSplit[1])
+
 
             # list arguments
             elif thisLine0Lower == '-ezColYLimL'.lower():
@@ -541,6 +579,8 @@ def ezColArgumentsCommandLine():
     global ezColYLim1                       # float
 
     global ezColStdout                      # integer
+    global ezColSocket                      # integer
+    global ezColWrite                       # integer
 
 
     print()
@@ -701,7 +741,15 @@ def ezColArgumentsCommandLine():
 
             elif cmdLineArgLower == '-ezColStdout'.lower():
                 cmdLineSplitIndex += 1      # point to first argument value
-                ezColStdout = int(cmdLineSplit[cmdLineSplitIndex])       # GLatGLon
+                ezColStdout = int(cmdLineSplit[cmdLineSplitIndex])
+
+            elif cmdLineArgLower == '-ezColSocket'.lower():
+                cmdLineSplitIndex += 1      # point to first argument value
+                ezColSocket = int(cmdLineSplit[cmdLineSplitIndex])
+
+            elif cmdLineArgLower == '-ezColWrite'.lower():
+                cmdLineSplitIndex += 1      # point to first argument value
+                ezColWrite = int(cmdLineSplit[cmdLineSplitIndex])
 
             # list arguments:
             elif cmdLineArgLower == '-ezColYLimL'.lower():
@@ -790,6 +838,8 @@ def ezColArguments():
     global ezColYLim1                       # float         creation
 
     global ezColStdout                      # integer
+    global ezColSocket                      # integer
+    global ezColWrite                       # integer
 
 
     # defaults
@@ -852,6 +902,8 @@ def ezColArguments():
         ezColYLim1     = 1.0        # fraction of Y Auto Scale, Maximum
 
         ezColStdout    = 0
+        ezColSocket    = 0
+        ezColWrite     = 1
 
     # Program argument priority:
     #    Start with the argument value defaults inside the programs.
@@ -999,6 +1051,10 @@ def ezColArguments():
     print('   ezColSecMax    =', ezColSecMax)
     print('   ezColRefAction =', ezColRefAction)
     print('   ezColYLimL     = [', ezColYLim0, ',', ezColYLim1, ']')
+    print()
+    print('   ezColStdout    =', ezColStdout)
+    print('   ezColSocket    =', ezColSocket)
+    print('   ezColWrite     =', ezColWrite)
 
 
 
@@ -1424,7 +1480,7 @@ def main():
                 if dateDayLastS != dateDayThisS:
                     # start new data file, because of new UTC day, or newFileButton
                     # if old data file open, close it
-                    if len(fileNameS) and not ezColStdout:
+                    if len(fileNameS) and fileWrite != None:
                         fileWrite.close()
 
                     # try to not write over existing data files,
@@ -1460,7 +1516,8 @@ def main():
                             exit()
 
                     print()
-                    print('Starting new output file:', fileNameS, '===============')
+                    if ezColWrite:
+                        print('Starting new output file:', fileNameS, '===============')
 
                     # with each new file, update lmstZero (changes about 4 minutes each 24 hours).
                     # As described above, calculate Local Mean Sidereal Time (LMST) Hours
@@ -1486,14 +1543,15 @@ def main():
                         + f'# gain {str(sdrGain)}\n' \
                         + '# frequency spectrums of RMS power = sqrt(mean of sum of squares)\n'
 
-                    if not ezColStdout:
+                    if ezColSocket:
+                        socketConn = connectSocket()
+
+                    if ezColWrite:
                         # open() with 1 to write to file after every '\n'
                         fileWrite = open(fileNameS, 'w', 1)
-
-                        # write file header
-                        fileWrite.write(metadata)
                     else:
-                        print(metadata)
+                        fileWrite = None
+                    exportData(metadata, socketConn, fileHandle=fileWrite)
 
                     coordMayBeNew = 0
 
@@ -1503,10 +1561,7 @@ def main():
                 # not new file, but if coordType or coord0 or coord1 has changed, write a coord line
                 elif coordMayBeNew:
                     coord = f'{coordName[0][coordType][0]} {coord0:g} {coordName[0][coordType][1]} {coord1:g}\n'
-                    if not ezColStdout:
-                        fileWrite.write(coord)
-                    else:
-                        print(coord)
+                    exportData(coord, socketConn=socketConn, fileHandle=fileWrite)
                     coordMayBeNew = 0
 
                 # now feedRef, timeStampUtcS, fileNameS, and fileSample are updated
@@ -1518,10 +1573,7 @@ def main():
 
                 # write data sample line
                 dataSample = timeStampUtcS + ' '.join(f'{i:.9g}' for i in rmsSpectrum) + dataFlagsS + '\n'
-                if not ezColStdout:
-                    fileWrite.write(dataSample)
-                else:
-                    print(dataSample)
+                exportData(dataSample, socketConn=socketConn, fileHandle=fileWrite)
 
                 if ezColVerbose:
                     print(ezRAObsName)
