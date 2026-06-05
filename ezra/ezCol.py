@@ -298,32 +298,39 @@ def printUsage():
     print()
     exit()
 
-def connectSocket(port=5453):
-    import socket
+class SocketConnection:
+    def __init__(self, port=5453):
+        import socket
+        self._port = port
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(('', port))
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(('', self._port))
 
-    print(f'Listening for socket connection on port {port}')
-    sock.listen(1)
-    socketConn, addr = sock.accept()
+        self._conn = None
 
-    print(f'Connected to {addr}')
-    return socketConn
+    def connect(self):
+        print(f'Listening for socket connection on port {self._port}')
+        self._sock.listen(1)
+        self._conn, addr = self._sock.accept()
+        print(f'Connected to {addr}')
+
+    def send(self, data):
+        if self._conn:
+            while True:
+                try:
+                    self._conn.send(data)
+                    break
+                except:
+                    print('Failed to send socket data, may have lost connection')
+                    self.connect()
 
 def exportData(data, stdout=False, socketConn=None, fileHandle=None):
     if stdout:
         print(data)
 
     if socketConn != None:
-        while True:
-            try:
-                socketConn.send(data.encode())
-                break
-            except:
-                print('Failed to send socket data, may have lost connection.')
-                os._exit(1)
+        socketConn.send(data.encode())
 
     if fileHandle != None:
         fileHandle.write(data)
@@ -369,7 +376,7 @@ def ezColArgumentsFile(ezDefaultsFileNameInput):
     global ezColYLim1                       # float
 
     global ezColStdout                      # integer
-    global ezColSocket                      # integer
+    global ezColSocket                      # integer (port)
     global ezColWrite                       # integer
 
 
@@ -502,6 +509,9 @@ def ezColArgumentsFile(ezDefaultsFileNameInput):
             elif thisLine0Lower == '-ezColWrite'.lower():
                 ezColWrite = float(thisLineSplit[1])
 
+            elif thisLine0Lower == '-ezColRecv'.lower():
+                ezColRecv = thisLineSplit[1]
+
 
             # list arguments
             elif thisLine0Lower == '-ezColYLimL'.lower():
@@ -579,7 +589,7 @@ def ezColArgumentsCommandLine():
     global ezColYLim1                       # float
 
     global ezColStdout                      # integer
-    global ezColSocket                      # integer
+    global ezColSocket                      # integer (port)
     global ezColWrite                       # integer
 
 
@@ -750,6 +760,10 @@ def ezColArgumentsCommandLine():
             elif cmdLineArgLower == '-ezColWrite'.lower():
                 cmdLineSplitIndex += 1      # point to first argument value
                 ezColWrite = int(cmdLineSplit[cmdLineSplitIndex])
+
+            elif cmdLineArgLower == '-ezColRecv'.lower():
+                cmdLineSplitIndex += 1      # point to first argument value
+                ezColRecv = cmdLineSplit[cmdLineSplitIndex]
 
             # list arguments:
             elif cmdLineArgLower == '-ezColYLimL'.lower():
@@ -1108,6 +1122,8 @@ def main():
     global ezColSecMax                      # float
 
     global ezColStdout                      # integer
+    global ezColSocket                      # integer (port)
+    global ezColWrite                       # integer
 
     printHello()
 
@@ -1543,15 +1559,17 @@ def main():
                         + f'# gain {str(sdrGain)}\n' \
                         + '# frequency spectrums of RMS power = sqrt(mean of sum of squares)\n'
 
+                    socketConn = None
                     if ezColSocket:
-                        socketConn = connectSocket()
+                        socketConn = SocketConnection()
+                        socketConn.connect()
 
                     if ezColWrite:
                         # open() with 1 to write to file after every '\n'
                         fileWrite = open(fileNameS, 'w', 1)
                     else:
                         fileWrite = None
-                    exportData(metadata, socketConn, fileHandle=fileWrite)
+                    exportData(metadata, ezColStdout, socketConn, fileHandle=fileWrite)
 
                     coordMayBeNew = 0
 
@@ -1561,7 +1579,7 @@ def main():
                 # not new file, but if coordType or coord0 or coord1 has changed, write a coord line
                 elif coordMayBeNew:
                     coord = f'{coordName[0][coordType][0]} {coord0:g} {coordName[0][coordType][1]} {coord1:g}\n'
-                    exportData(coord, socketConn=socketConn, fileHandle=fileWrite)
+                    exportData(coord, ezColStdout, socketConn=socketConn, fileHandle=fileWrite)
                     coordMayBeNew = 0
 
                 # now feedRef, timeStampUtcS, fileNameS, and fileSample are updated
@@ -1573,7 +1591,7 @@ def main():
 
                 # write data sample line
                 dataSample = timeStampUtcS + ' '.join(f'{i:.9g}' for i in rmsSpectrum) + dataFlagsS + '\n'
-                exportData(dataSample, socketConn=socketConn, fileHandle=fileWrite)
+                exportData(dataSample, ezColStdout, socketConn=socketConn, fileHandle=fileWrite)
 
                 if ezColVerbose:
                     print(ezRAObsName)
